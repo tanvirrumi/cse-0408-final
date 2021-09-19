@@ -1,0 +1,235 @@
+# all imports that we will need
+import pandas as pd
+
+import sklearn as skl
+from sklearn.datasets import load_wine
+from sklearn import tree
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+import pickle
+import matplotlib.pyplot as plt
+plt.rcParams['figure.figsize'] = [30, 15]
+# load a dataset
+wine=load_wine()
+
+
+# merge labels and features into one data frame so it is easier
+df=pd.DataFrame(wine.data,columns=wine.feature_names)
+features_names=wine.feature_names
+labels=["wine"]
+df["wine"]=wine.target
+
+
+# train test split
+train,test= train_test_split(df, shuffle=True,train_size=0.8,test_size=0.2)
+# train testing, spliut very simplistic
+# Note: do not do it like this in practice
+train
+
+# initialize a decision tree
+clf = tree.DecisionTreeClassifier()
+# train the tree
+clf = clf.fit(train[features_names], train[labels])
+# make pretty image to explain
+_=tree.plot_tree(clf,
+              class_names=wine.target_names,
+              filled=True,
+              feature_names=features_names,
+              fontsize=20) 
+
+# evaluate our results
+y_pred=clf.predict(test[features_names])
+y_true=test[labels]
+# generate a report containing the results we care for
+report=classification_report(y_true, y_pred, target_names=wine.target_names,output_dict=True)
+for k in report:
+  print(f"{k}:{report[k]}\n")
+
+
+# feature importance
+feature_importance = list(clf.feature_importances_)
+feature_importance=zip(features_names,feature_importance)
+feature_importance=sorted(feature_importance, key=lambda x:x[1],reverse=True)
+for name,importance in feature_importance:
+  print(f"{name}:{importance}")  
+
+# store the tree
+pickle.dump(clf, open('model.pkl','wb'))
+clf=pickle.load(open('model.pkl','rb'))
+clf.predict(test[features_names])
+
+# get probabilties instead of predictions
+clf.predict_proba(test[features_names])[:5]
+# This doesnt work, since decision trees with full height are pure at the end!
+# To solve either 
+# 1. make a max_depth=X, which will not allow the tree to go deepr that that depth
+# 2. fit a random forest
+from sklearn.ensemble import RandomForestClassifier
+
+y_true=test[labels]
+
+clf = RandomForestClassifier(n_estimators=2)
+clf.fit(train[features_names], train[labels])
+clf.predict_proba(test[features_names])[:5]
+
+
+clf = RandomForestClassifier(n_estimators=100)
+clf.fit(train[features_names], train[labels])
+
+y_pred=clf.predict(test[features_names])
+report=classification_report(y_true, y_pred, target_names=wine.target_names,output_dict=True)
+for k in report:
+  print(f"{k}:{report[k]}\n")
+
+
+# make a simple example dataset
+features_names=["Subscribes","CountLikedVideos"]
+class_labels=["DidNotWatchThisVideo","WatchedThisVideo"]
+data=pd.DataFrame([[True,5],[True,1],[True,6],[False,7],[False,4],[False,2]],columns=features_names)
+labels=pd.DataFrame([True,True,True,False,False,True])
+all=data.copy()
+all['WatchedThisVideo']=labels
+all
+
+# create tree
+clf = tree.DecisionTreeClassifier()
+# train tree
+clf = clf.fit(data, labels)
+plt.rcParams['figure.figsize'] = [20, 10]
+# pretty image
+_=tree.plot_tree(clf,
+              class_names=class_labels,
+              filled=True,
+              feature_names=features_names,
+              fontsize=15)
+
+
+# calculate the gini score for two classes
+# not as complicated as it looks
+def gini_score_2classes(count_watched_video_left_node, 
+                        count_watched_video_right_node,
+                        count_total_left_node, 
+                        count_total_right_node):
+    """
+    Given the the counts we find with our splits,
+    we can calculate the gini_score.
+    The heigher the gini_score the better splitting there is!
+
+    left is always less, and left is always false.(just by definition)
+    Right is the opposite.
+
+    count_watched_video_left_node: count of samples that are less and evaluate to the target=1=True
+    count_watched_video_right_node: count of samples that are more and evaluate to the target=1=True
+    count_total_left_node: count of samples that are <=(less than splitting point)
+    count_total_right_node: count of samples that are >=(bigger than splitting point)
+    """
+    try:
+      # sum of all samples evaluated in leaf
+      total_count=count_total_left_node+count_total_right_node
+
+      # probabilty of going either right or left
+      p_of_going_left=count_total_left_node/total_count
+      p_of_going_right=count_total_right_node/total_count
+
+      # probabilty of going left AND being correct=True=1
+      p_of_left_being_true=count_watched_video_left_node/count_total_left_node
+      p_of_right_being_true=count_watched_video_right_node/count_total_right_node
+
+      # fancy math to be in [0,1] range
+      sq_left=p_of_left_being_true**2+(1-p_of_left_being_true)**2
+      sq_right=p_of_right_being_true**2+(1-p_of_right_being_true)**2
+      
+      # weighting the probabiltis by the amount we split
+      w_left=sq_left*p_of_going_left
+      w_right=sq_right*p_of_going_right
+
+      
+      # acctual score definition and impurity
+      gini_score=w_left+w_right
+      gini_impurity=(p_of_going_left*(1-p_of_going_left))+(p_of_going_right*(1-p_of_going_right))
+
+      return round(gini_score,3) ,round(gini_impurity,3)
+    except:
+      return "0 division, ignore for this example"
+all
+
+
+
+
+# gini_score_2classes(count_watched_video_left_node, 
+#                         count_watched_video_right_node,
+#                         count_total_left_node, 
+#                         count_total_right_node)
+
+# simple example with counting by hand
+print("gini for feature Subscribes:", gini_score_2classes(1,3,3,3))
+
+# for numerical variables we also hav eto find the split point
+# we do so by sorting the values and calculating gini_score for each split
+count_vids=sorted(data["CountLikedVideos"].values)
+print("\nAll CountLikedVideos values",count_vids)
+
+# calculate score for all possible splitting points
+for i in range(0,len(count_vids)-1):
+  avg=(count_vids[i]+count_vids[i+1])/2
+  print("\nAverage between cur and next:", avg)
+  # count the values that fullfil the defintion for each point
+  count_of_watched_that_are_bigger_than_avg=len(
+      all[
+         (all["CountLikedVideos"]>=avg) &
+          (all["WatchedThisVideo"]==True)
+          ])
+  count_of_watched_that_are_less_than_avg=len(
+      all[
+         (all["CountLikedVideos"]<avg) &
+          (all["WatchedThisVideo"]==True)
+          ])
+  
+  count_left= len(all[
+         (all["CountLikedVideos"]<avg)
+        ])
+  count_right= len(all[
+        (all["CountLikedVideos"]>=avg)
+        ])
+  print("Ginit at point:", gini_score_2classes(count_of_watched_that_are_less_than_avg,
+                                               count_of_watched_that_are_bigger_than_avg,
+                                               count_left,
+                                               count_right,
+                                               ))
+
+
+
+# Calculate at split point
+all_first_left=all[all["Subscribes"]==False]
+all_first_left
+
+
+# sampe as above but now only for the second leafe
+count_vids=sorted(data["CountLikedVideos"].values)
+for i in range(0,len(count_vids)-1):
+  avg=(count_vids[i]+count_vids[i+1])/2
+  print("\nAverage between cur and next:", avg)
+  # cal gini at
+  count_of_watched_that_are_bigger_than_avg=len(
+      all_first_left[
+         (all_first_left["CountLikedVideos"]>=avg) &
+          (all_first_left["WatchedThisVideo"]==True)
+          ])
+  count_of_watched_that_are_less_than_avg=len(
+      all_first_left[
+         (all_first_left["CountLikedVideos"]<=avg) &
+          (all_first_left["WatchedThisVideo"]==True)
+          ])
+  
+  count_left= len(all_first_left[
+         (all_first_left["CountLikedVideos"]<avg)
+        ])
+  count_right= len(all_first_left[
+        (all_first_left["CountLikedVideos"]>=avg)
+        ])
+  print("Ginit at point:", gini_score_2classes(count_of_watched_that_are_less_than_avg,
+                                               count_of_watched_that_are_bigger_than_avg,
+                                               count_left,
+                                               count_right,
+                                               ))
+                                               
